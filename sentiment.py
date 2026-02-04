@@ -119,30 +119,37 @@ def get_hackable_scores(texts: list[str]) -> list[float]:
     """
     A deliberately "hackable" reward function for demonstrating reward hacking.
     
-    Simply counts positive words and returns a score based on frequency.
-    This is easily exploited by the model - it can learn to just output
-    "great great great amazing wonderful" nonsense to maximize reward.
+    Returns the PROPORTION of words that are positive. This incentivizes the model
+    to output ONLY positive words - any other word dilutes the score.
     
     WARNING: This is intentionally a BAD reward function for educational purposes!
     It demonstrates what happens when rewards don't align with actual quality.
+    
+    The reward is: (positive word count) / (total word count)
+    - "great" = 1.0 (100% positive)
+    - "great movie" = 0.5 (50% positive)  
+    - "great great great" = 1.0 (100% positive, despite being nonsense!)
     
     Args:
         texts: List of text strings to score
     
     Returns:
-        List of floats in [0, 1] representing "positivity" (word count based)
+        List of floats in [0, 1] representing proportion of positive words
     
     Example:
         >>> scores = get_hackable_scores(["Great movie!", "great great great"])
-        >>> # First might get ~0.2, second gets ~0.6 (despite being nonsense)
+        >>> # First gets 0.5, second gets 1.0 (despite being nonsense)
     """
     scores = []
     for text in texts:
         text_lower = text.lower()
+        words = text_lower.split()
+        n_words = len(words) if words else 1  # Avoid division by zero
         # Count positive word occurrences
-        count = sum(text_lower.count(word) for word in POSITIVE_WORDS)
-        # Normalize: 5+ positive words = max score
-        score = min(count / 5.0, 1.0)
+        count = sum(1 for word in words if word.strip('.,!?;:"\'') in POSITIVE_WORDS)
+        # Proportion of positive words - incentivizes outputting ONLY positive words
+        # "great great great" = 1.0, "great movie" = 0.5
+        score = count / n_words
         scores.append(score)
     return scores
 

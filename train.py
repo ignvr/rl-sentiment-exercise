@@ -57,13 +57,16 @@ class ValidationCallback(TrainerCallback):
     If wandb is enabled, logs validation metrics and sample completions.
     """
     
-    def __init__(self, tokenizer, validation_prompts, eval_steps=10, num_display=4, use_wandb=False):
+    def __init__(self, tokenizer, validation_prompts, eval_steps=10, num_display=4, 
+                 use_wandb=False, temperature=1.0, max_new_tokens=48):
         self.tokenizer = tokenizer
         self.validation_prompts = validation_prompts
         self.eval_steps = eval_steps
         self.num_display = num_display
         self.use_wandb = use_wandb and WANDB_AVAILABLE
         self.validation_history = []  # Store history for plotting
+        self.temperature = temperature
+        self.max_new_tokens = max_new_tokens
         
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         """Run validation at step 0 before training starts."""
@@ -100,8 +103,8 @@ class ValidationCallback(TrainerCallback):
                 
                 outputs = model.generate(
                     **inputs,
-                    max_new_tokens=48,
-                    temperature=1.0,
+                    max_new_tokens=self.max_new_tokens,
+                    temperature=self.temperature,
                     top_p=0.9,
                     do_sample=True,
                     pad_token_id=self.tokenizer.pad_token_id,
@@ -153,7 +156,7 @@ class ValidationCallback(TrainerCallback):
                 "sentiment": score
             })
         
-        # Print statistics for all 64 prompts
+        # Print statistics for all prompts
         print(f"\n{'-'*70}")
         print(f"STATISTICS (all {len(scores)} validation prompts):")
         print(f"  Mean sentiment:  {stats['val/sentiment_mean']:.3f}")
@@ -168,13 +171,13 @@ class ValidationCallback(TrainerCallback):
         if self.use_wandb:
             wandb.log({"step": step, **stats})
             
-            # Log sample completions as a table
-            if sample_data:
-                table = wandb.Table(
-                    columns=["prompt", "generated", "sentiment"],
-                    data=[[s["prompt"], s["generated"], s["sentiment"]] for s in sample_data]
-                )
-                wandb.log({f"val/samples_step_{step}": table})
+            # # Log sample completions as a table
+            # if sample_data:
+            #     table = wandb.Table(
+            #         columns=["prompt", "generated", "sentiment"],
+            #         data=[[s["prompt"], s["generated"], s["sentiment"]] for s in sample_data]
+            #     )
+            #     wandb.log({f"val/samples_step_{step}": table})
         
         model.train()
 
@@ -185,7 +188,7 @@ class ValidationCallback(TrainerCallback):
 
 @dataclass
 class TrainingPreset:
-    """Training configuration preset for different hardware."""
+    """Training configuration preset."""
     name: str
     max_steps: int
     num_generations: int
@@ -193,39 +196,19 @@ class TrainingPreset:
     gradient_accumulation_steps: int
     max_completion_length: int
     learning_rate: float
-    estimated_time_minutes: str
+    temperature: float
 
 
 PRESETS = {
-    "quick": TrainingPreset(
-        name="quick",
-        max_steps=50,
-        num_generations=4,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=2,
-        max_completion_length=48,
-        learning_rate=1e-5,
-        estimated_time_minutes="3-5"
-    ),
-    "medium": TrainingPreset(
-        name="medium", 
-        max_steps=150,
-        num_generations=4,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
-        max_completion_length=64,
-        learning_rate=1e-5,
-        estimated_time_minutes="10-15"
-    ),
-    "full": TrainingPreset(
-        name="full",
-        max_steps=300,
+    "default": TrainingPreset(
+        name="default",
+        max_steps=200,
         num_generations=8,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         max_completion_length=64,
-        learning_rate=5e-6,
-        estimated_time_minutes="25-35"
+        learning_rate=1e-4,
+        temperature=1.5,
     ),
 }
 
@@ -237,13 +220,15 @@ PRESETS = {
 def train(
     model_name: str = "gpt2",
     output_dir: str = "./outputs",
-    preset: str = "medium",
+    preset: str = "default",
     max_steps: Optional[int] = None,
     num_generations: Optional[int] = None,
     reward_shaping: str = "none",
     kl_type: str = "none",
     kl_coef: float = 0.1,
     hackable_reward: bool = False,
+    negate_reward: bool = False,
+    beta: float = 0.0,
     use_peft: bool = False,
     log_completions: bool = False,
     seed: int = 42,
@@ -257,13 +242,15 @@ def train(
     Args:
         model_name: HuggingFace model name (default: "gpt2")
         output_dir: Directory to save checkpoints and logs
-        preset: Training preset ("quick", "medium", "full")
+        preset: Training preset ("default")
         max_steps: Override preset's max_steps
         num_generations: Override preset's num_generations (GRPO group size)
         reward_shaping: "none" or "exponential"
         kl_type: Custom KL regularization in reward ("none", "forward", "backward")
         kl_coef: Coefficient for custom KL regularization (default: 0.1)
         hackable_reward: Use word-counting reward (demonstrates reward hacking)
+        negate_reward: Negate reward to optimize for negative sentiment
+        beta: TRL's internal KL regularization coefficient (0.0 = disabled)
         use_peft: Whether to use LoRA for parameter-efficient training
         log_completions: Whether to log TRL's internal training completions (default: False,
                          we use our own validation callback instead)
@@ -273,10 +260,9 @@ def train(
         wandb_run_name: Optional W&B run name (auto-generated from config if None)
     """
     # Get preset configuration
-    config_preset = PRESETS.get(preset, PRESETS["medium"])
+    config_preset = PRESETS.get(preset, PRESETS["default"])
     print(f"\n{'='*60}")
     print(f"Training Configuration: {preset}")
-    print(f"Estimated time: {config_preset.estimated_time_minutes} minutes")
     print(f"{'='*60}\n")
     
     # Override preset values if specified
@@ -294,9 +280,12 @@ def train(
                 run_name = wandb_run_name
             else:
                 parts = [preset]
+                if negate_reward:
+                    parts.append("NEG")
                 if hackable_reward:
                     parts.append("HACKABLE")
                 parts.append(reward_shaping)
+                parts.append(f"lr{config_preset.learning_rate}")
                 if kl_type != "none":
                     parts.append(f"kl-{kl_type}")
                     if kl_coef != 0.1:  # Include coef if non-default
@@ -314,6 +303,8 @@ def train(
                     "kl_type": kl_type,
                     "kl_coef": kl_coef,
                     "hackable_reward": hackable_reward,
+                    "negate_reward": negate_reward,
+                    "beta": beta,
                     "use_peft": use_peft,
                     "learning_rate": config_preset.learning_rate,
                     "batch_size": config_preset.per_device_train_batch_size,
@@ -366,41 +357,42 @@ def train(
             param.requires_grad = False
         print(f"Reference model loaded (frozen)")
     
-    # Create reward function
+    # Create reward function using factory (supports all configurations)
+    base_scorer = None
     if hackable_reward:
-        # Use hackable word-counting reward (demonstrates reward hacking)
         print("\n" + "!" * 60)
         print("WARNING: Using HACKABLE reward function!")
         print("This counts positive words and is easily exploited.")
         print("The model may learn degenerate 'great great great' outputs.")
         print("!" * 60 + "\n")
-        
-        def reward_func(completions: list[str], **kwargs) -> list[float]:
-            return get_hackable_scores(completions)
-    else:
-        # Use proper sentiment model with make_reward_function factory
-        reward_func = make_reward_function(
-            shaping=reward_shaping,
-            kl_type=kl_type,
-            kl_coef=kl_coef,
-            ref_model=ref_model,
-            tokenizer=tokenizer,
-        )
+        base_scorer = get_hackable_scores
+    
+    if negate_reward:
+        print("\n" + "!" * 60)
+        print("NEGATING REWARD: Optimizing for NEGATIVE sentiment!")
+        print("!" * 60 + "\n")
+    
+    reward_func = make_reward_function(
+        shaping=reward_shaping,
+        kl_type=kl_type,
+        kl_coef=kl_coef,
+        ref_model=ref_model,
+        tokenizer=tokenizer,
+        base_scorer=base_scorer,
+        negate=negate_reward,
+    )
     
     # Print reward configuration
-    if hackable_reward:
-        print(f"Reward function: HACKABLE (word counting - easily exploited!)")
-    else:
-        shaping_desc = {
-            "none": "Basic sentiment [0, 1]",
-            "exponential": "Exponential (temperature=1.0)",
-        }
-        kl_desc = {
-            "none": "None",
-            "forward": f"Forward KL (coef={kl_coef})",
-            "backward": f"Backward KL (coef={kl_coef})",
-        }
-        print(f"Reward shaping: {shaping_desc.get(reward_shaping, reward_shaping)}")
+    scorer_name = "HACKABLE (word counting)" if hackable_reward else "Sentiment model"
+    shaping_desc = {"none": "none", "exponential": "exponential (temp=1.0)"}
+    kl_desc = {
+        "none": "None",
+        "forward": f"Forward KL (coef={kl_coef})",
+        "backward": f"Backward KL (coef={kl_coef})",
+    }
+    negate_str = " [NEGATED]" if negate_reward else ""
+    print(f"Reward: {scorer_name}, shaping={shaping_desc.get(reward_shaping, reward_shaping)}{negate_str}")
+    if kl_type != "none":
         print(f"KL regularization: {kl_desc.get(kl_type, kl_type)}")
     
     # Configure GRPO training
@@ -416,8 +408,8 @@ def train(
         # GRPO specific
         num_generations=actual_num_generations,
         max_completion_length=config_preset.max_completion_length,
-        temperature=1.0,
-        beta=0.0,  # Disabled - we use custom KL in reward function instead
+        temperature=config_preset.temperature,
+        beta=beta,  # TRL's internal KL regularization (0.0 = disabled)
         
         # Optimization
         warmup_steps=int(actual_max_steps * 0.1),  # 10% warmup
@@ -450,6 +442,8 @@ def train(
     print(f"  - Group size (num_generations): {actual_num_generations}")
     print(f"  - Max completion length: {config_preset.max_completion_length}")
     print(f"  - Learning rate: {config_preset.learning_rate}")
+    print(f"  - Temperature: {config_preset.temperature}")
+    print(f"  - KL beta (TRL internal): {beta}")
     
     # Initialize trainer
     print("\nInitializing GRPOTrainer...")
@@ -479,6 +473,8 @@ def train(
         eval_steps=training_args.logging_steps,
         num_display=4,
         use_wandb=use_wandb,
+        temperature=config_preset.temperature,
+        max_new_tokens=config_preset.max_completion_length,
     )
     
     trainer = GRPOTrainer(
@@ -549,9 +545,9 @@ def main():
     
     # Training preset
     parser.add_argument(
-        "--preset", type=str, default="medium",
-        choices=["quick", "medium", "full"],
-        help="Training preset (quick: ~5min, medium: ~15min, full: ~30min)"
+        "--preset", type=str, default="default",
+        choices=["default"],
+        help="Training preset"
     )
     
     # Override preset values
@@ -582,6 +578,14 @@ def main():
     parser.add_argument(
         "--hackable_reward", action="store_true", default=False,
         help="Use hackable word-counting reward (demonstrates reward hacking)"
+    )
+    parser.add_argument(
+        "--negate_reward", action="store_true", default=False,
+        help="Negate reward to optimize for negative sentiment"
+    )
+    parser.add_argument(
+        "--beta", type=float, default=0.0,
+        help="TRL's internal KL regularization coefficient (default: 0.0 = disabled)"
     )
     
     # Training options
@@ -625,6 +629,8 @@ def main():
         kl_type=args.kl_type,
         kl_coef=args.kl_coef,
         hackable_reward=args.hackable_reward,
+        negate_reward=args.negate_reward,
+        beta=args.beta,
         use_peft=args.use_peft,
         log_completions=args.log_trl_completions,
         seed=args.seed,

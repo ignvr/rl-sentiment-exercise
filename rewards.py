@@ -287,13 +287,16 @@ def make_reward_function(
     kl_coef: float = 0.1,
     ref_model=None,
     tokenizer=None,
+    base_scorer=None,
+    negate: bool = False,
 ):
     """
     Factory function to create a combined reward function.
     
     This creates a reward function that:
-    1. Computes base sentiment reward (with optional shaping)
+    1. Computes base reward using the scorer (with optional shaping)
     2. Adds KL regularization penalty/bonus (if enabled)
+    3. Optionally negates the final reward (for negative sentiment optimization)
     
     Args:
         shaping: Type of reward shaping ("none" or "exponential")
@@ -301,6 +304,9 @@ def make_reward_function(
         kl_coef: Coefficient for KL term
         ref_model: Reference model (required if kl_type != "none")
         tokenizer: Tokenizer (required if kl_type != "none")
+        base_scorer: Optional custom scorer function(texts) -> [0,1] scores.
+                     If None, uses sentiment_reward.
+        negate: If True, negate the final reward (optimize for negative sentiment)
     
     Returns:
         A reward function compatible with TRL's GRPOTrainer
@@ -308,36 +314,53 @@ def make_reward_function(
     if kl_type != "none" and (ref_model is None or tokenizer is None):
         raise ValueError(f"ref_model and tokenizer required for kl_type={kl_type}")
     
+    # Use provided scorer or default to sentiment_reward
+    scorer = base_scorer if base_scorer is not None else sentiment_reward
+    
     def reward_fn(completions: list[str], prompts: list[str] = None, **kwargs) -> list[float]:
-        # Step 1: Compute base sentiment reward
+        # Step 1: Compute base reward from scorer
+        raw_scores = scorer(completions)
+        
+        # Step 2: Apply shaping
         if shaping == "none":
-            base_rewards = sentiment_reward(completions)
+            base_rewards = raw_scores
         elif shaping == "exponential":
-            base_rewards = shaped_reward_exponential(completions)
+            # Apply exponential shaping to raw scores
+            base_rewards = [shaped_reward_exponential_single(s) for s in raw_scores]
         else:
             raise ValueError(f"Unknown shaping: {shaping}")
         
-        # Step 2: Add KL regularization if enabled
-        if kl_type == "none" or prompts is None:
-            return base_rewards
+        # Step 3: Add KL regularization if enabled
+        if kl_type != "none" and prompts is not None:
+            if kl_type == "forward":
+                kl_terms = kl_penalty_forward(
+                    completions, prompts, ref_model, tokenizer, kl_coef
+                )
+            elif kl_type == "backward":
+                kl_terms = kl_penalty_backward(
+                    completions, prompts, ref_model, tokenizer, kl_coef
+                )
+            else:
+                raise ValueError(f"Unknown kl_type: {kl_type}")
+            
+            # Combine: total_reward = base_reward + kl_term
+            base_rewards = [base + kl for base, kl in zip(base_rewards, kl_terms)]
         
-        if kl_type == "forward":
-            kl_terms = kl_penalty_forward(
-                completions, prompts, ref_model, tokenizer, kl_coef
-            )
-        elif kl_type == "backward":
-            kl_terms = kl_penalty_backward(
-                completions, prompts, ref_model, tokenizer, kl_coef
-            )
-        else:
-            raise ValueError(f"Unknown kl_type: {kl_type}")
+        # Step 4: Negate if optimizing for negative sentiment
+        if negate:
+            base_rewards = [-r for r in base_rewards]
         
-        # Combine: total_reward = base_reward + kl_term
-        total_rewards = [base + kl for base, kl in zip(base_rewards, kl_terms)]
-        
-        return total_rewards
+        return base_rewards
     
     return reward_fn
+
+
+def shaped_reward_exponential_single(score: float, temperature: float = 1.0) -> float:
+    """Apply exponential shaping to a single [0,1] score."""
+    import math
+    # Shift to [-0.5, 0.5] then apply exponential
+    shifted = score - 0.5
+    return math.exp(shifted / temperature) - 1.0
 
 
 # =============================================================================
