@@ -1,6 +1,9 @@
 # RL Fine-tuning for Positive Sentiment Generation
 
-A hands-on exercise for learning Reinforcement Learning fine-tuning of Language Models using GRPO (Group Relative Policy Optimization).
+RL fine-tuning of Language Models for positive sentiment using GRPO.
+
+This repo was written by Ido Greenberg with advisement by Oran Lang and Gal Chechik for the course [RL-for-Real](https://docs.google.com/document/d/1fmfYp7EH9fqcB7CWWBvrZ40MtCN89Sr_o3o3EG9hWyE/edit?usp=sharing).
+The course is organized by NVIDIA Research in collaboration with Google Research, Mentee Robotics, Tel-Aviv University, Bar-Ilan University, and the Technion.
 
 ## Overview
 
