@@ -17,11 +17,11 @@ def compute_log_probs(
     prompts: list[str],
     model,
     tokenizer,
-) -> list[float]:
+) -> list[list[float]]:
     """
-    Compute normalized log probabilities of completions under a model.
+    Compute per-token log probabilities of completions under a model.
     
-    This computes how "likely" each completion is according to the given model.
+    This computes how "likely" each token is according to the given model.
     Used for KL regularization to compare policy vs reference distributions.
     
     Args:
@@ -31,7 +31,8 @@ def compute_log_probs(
         tokenizer: Tokenizer for the model
     
     Returns:
-        List of normalized log probabilities (per-token average)
+        List of lists of per-token log probabilities (one list per completion).
+        Each inner list has one float per completion token.
         - Values are negative (log probs)
         - Higher (less negative) = more likely under model
         - Lower (more negative) = less likely under model
@@ -69,26 +70,21 @@ def compute_log_probs(
     log_probs = torch.log_softmax(logits, dim=-1)
     input_ids = inputs["input_ids"]
     
-    # Compute average log prob for completion tokens only
-    normalized_log_probs = []
+    # Collect per-token log probs for completion tokens only
+    token_log_probs = []
     for i in range(len(completions)):
         start_idx = prompt_lengths[i]
         seq_len = int(inputs["attention_mask"][i].sum().item())
         
-        # Sum log probs for completion tokens
         # logits[t] predicts token[t+1], so we look at positions start_idx to seq_len-2
-        seq_log_prob = 0.0
-        num_tokens = 0
+        completion_log_probs = []
         for t in range(start_idx, seq_len - 1):
             token_id = input_ids[i, t + 1].item()
-            seq_log_prob += log_probs[i, t, token_id].item()
-            num_tokens += 1
+            completion_log_probs.append(log_probs[i, t, token_id].item())
         
-        # Normalize by number of tokens
-        avg_log_prob = seq_log_prob / max(num_tokens, 1)
-        normalized_log_probs.append(avg_log_prob)
+        token_log_probs.append(completion_log_probs)
     
-    return normalized_log_probs
+    return token_log_probs
 
 
 def make_reward_function(
@@ -107,8 +103,8 @@ def make_reward_function(
     
     This creates a reward function that:
     1. Computes base reward using the scorer (with optional shaping)
-    2. Adds KL regularization penalty (if enabled)
-    3. Optionally negates the final reward (for negative sentiment optimization)
+    2. Optionally negates the base reward (for negative sentiment optimization)
+    3. Adds KL regularization penalty (if enabled)
     
     Args:
         shaping: Type of reward shaping ("linear" or "exponential")
@@ -147,13 +143,15 @@ def make_reward_function(
         else:
             raise ValueError(f"Unknown shaping: {shaping}")
         
-        # Step 3: Add KL regularization if enabled
+        # Step 3: Negate if optimizing for negative sentiment (before KL)
+        if negate:
+            base_rewards = [-r for r in base_rewards]
+        
+        # Step 4: Subtract KL regularization penalty if enabled
         if kl_type != "none" and prompts is not None:
-            # Compute log probs for both models (infrastructure - not part of student exercise)
             log_probs_policy = compute_log_probs(completions, prompts, policy_model, tokenizer)
             log_probs_ref = compute_log_probs(completions, prompts, ref_model, tokenizer)
             
-            # Call student's KL function with pre-computed log probs
             if kl_type == "forward":
                 kl_terms = reward_module.kl_penalty_forward(
                     log_probs_policy, log_probs_ref, kl_coef
@@ -165,12 +163,7 @@ def make_reward_function(
             else:
                 raise ValueError(f"Unknown kl_type: {kl_type}")
             
-            # Combine: total_reward = base_reward + kl_term
-            base_rewards = [base + kl for base, kl in zip(base_rewards, kl_terms)]
-        
-        # Step 4: Negate if optimizing for negative sentiment
-        if negate:
-            base_rewards = [-r for r in base_rewards]
+            base_rewards = [base - kl for base, kl in zip(base_rewards, kl_terms)]
         
         return base_rewards
     

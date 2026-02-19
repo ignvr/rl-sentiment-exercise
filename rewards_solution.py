@@ -31,51 +31,80 @@ def sentiment_reward(completions: list[str]) -> list[float]:
 
 # =============================================================================
 # KL REGULARIZATION - SOLUTION
+#
+# CONTEXT: TRL includes built-in KL regularization (the `beta` parameter),
+# applied per-token during advantage computation. Here we re-implement KL
+# regularization at the token level for pedagogical purposes.
+#
+# You receive per-token log probabilities as list[list[float]]: one list per
+# completion, with one float per generated token. Your functions should compute
+# per-token KL terms and average them to produce one penalty scalar per completion.
 # =============================================================================
 
 def kl_penalty_forward(
-    log_probs_policy: list[float],
-    log_probs_ref: list[float],
+    log_probs_policy: list[list[float]],
+    log_probs_ref: list[list[float]],
     kl_coef: float = 0.1,
 ) -> list[float]:
     """
-    Forward KL regularization penalty.
+    Forward KL regularization penalty (token-level).
     
-    SOLUTION: kl_coef * (log_prob_ref - log_prob_policy)
-    
-    This penalizes the policy for deviating from the reference model:
-    - When policy assigns HIGHER prob than reference: penalty is negative
-    - When policy assigns SIMILAR prob: penalty is ~0
-    - When policy assigns LOWER prob: penalty is positive (small bonus)
+    SOLUTION:
+    KL(π || π_ref) = E_π[log π - log π_ref]
+    Since the data is already sampled from π, the per-token KL term is simply
+    (log_policy - log_ref). Average over tokens and scale by kl_coef.
+    Returns ≥ 0; the calling infrastructure subtracts this from the reward.
     """
-    penalties = [
-        kl_coef * (lp_ref - lp_policy) 
-        for lp_policy, lp_ref in zip(log_probs_policy, log_probs_ref)
-    ]
+    penalties = []
+    for lp_policy, lp_ref in zip(log_probs_policy, log_probs_ref):
+        n = len(lp_policy)
+        if n == 0:
+            penalties.append(0.0)
+            continue
+        token_kl = [lp_p - lp_r for lp_p, lp_r in zip(lp_policy, lp_ref)]
+        penalties.append(kl_coef * sum(token_kl) / n)
     return penalties
 
 
 def kl_penalty_backward(
-    log_probs_policy: list[float],
-    log_probs_ref: list[float],
+    log_probs_policy: list[list[float]],
+    log_probs_ref: list[list[float]],
     kl_coef: float = 0.1,
 ) -> list[float]:
     """
-    Backward KL regularization penalty with exponential weighting.
+    Backward (reverse) KL regularization penalty (token-level).
     
-    SOLUTION: -kl_coef * exp(log_prob_policy - log_prob_ref)
+    SOLUTION:
+    KL(π_ref || π) = E_π_ref[log(π_ref / π)]
+    Since we sample from π (not π_ref), we need importance sampling:
+        E_π_ref[f(x)] = E_π[(π_ref(x)/π(x)) · f(x)]
     
-    Note: exp(log_prob_policy - log_prob_ref) = prob_policy / prob_ref
+    An exact implementation would apply sequence-level importance weight:
+        penalty(x) = [Π_t π_ref(x_t|x<t)/π(x_t|x<t)] · [Σ_t log π_ref(x_t|x<t) - log π(x_t|x<t)]
+    However, the product Π_t of T ratios can explode or vanish, causing high variance.
     
-    This gives a larger penalty when the policy is much more confident than
-    the reference, which helps prevent mode collapse.
+    We thus use an approximation:
+        penalty(x) = (1/T) Σ_t [π_ref(x_t|x<t)/π(x_t|x<t)] · [log π_ref(x_t|x<t) - log π(x_t|x<t)]
+    
+    This replaces the single sequence-level weight with independent per-token weights.
+    It is exact when π = π_ref, and a good approximation when they are close -
+    which is the regime we are regularizing toward. This is a standard
+    token-level approach often used in practice.
+    
+    Returns ≥ 0; the calling infrastructure subtracts this from the reward.
     """
     penalties = []
     for lp_policy, lp_ref in zip(log_probs_policy, log_probs_ref):
-        diff = lp_policy - lp_ref
-        # Clamp to avoid numerical overflow
-        exp_diff = min(math.exp(diff), 100.0)
-        penalties.append(-kl_coef * exp_diff)
+        n = len(lp_policy)
+        if n == 0:
+            penalties.append(0.0)
+            continue
+        token_kl = []
+        for lp_p, lp_r in zip(lp_policy, lp_ref):
+            diff = lp_r - lp_p
+            weight = min(math.exp(diff), 100.0)
+            token_kl.append(weight * diff)
+        penalties.append(kl_coef * sum(token_kl) / n)
     return penalties
 
 
@@ -135,17 +164,17 @@ if __name__ == "__main__":
     for score, s in zip(test_scores, shaped_results):
         print(f"   {score:.1f} -> {s:+.3f}")
     
-    # Test KL penalties
-    print("\n3. KL Penalties:")
-    test_lp_policy = [-2.0, -3.0, -1.5]  # Policy log probs
-    test_lp_ref = [-2.5, -2.5, -2.5]      # Reference log probs
+    # Test KL penalties (token-level)
+    print("\n3. KL Penalties (token-level):")
+    test_lp_policy = [[-2.0, -3.0, -1.5], [-1.0, -2.0]]  # Per-token log probs
+    test_lp_ref = [[-2.5, -2.5, -2.5], [-1.5, -1.5]]
     
     fwd = kl_penalty_forward(test_lp_policy, test_lp_ref, 0.1)
-    print(f"   Forward KL penalties: {[f'{p:.3f}' for p in fwd]}")
-    print(f"   (Negative when policy more confident than ref)")
+    print(f"   Forward KL penalties: {[f'{p:.4f}' for p in fwd]}")
+    print(f"   (≥ 0; subtracted from reward by infrastructure)")
     
     bwd = kl_penalty_backward(test_lp_policy, test_lp_ref, 0.1)
-    print(f"   Backward KL penalties: {[f'{p:.3f}' for p in bwd]}")
-    print(f"   (Exponentially larger when policy >> ref)")
+    print(f"   Backward KL penalties: {[f'{p:.4f}' for p in bwd]}")
+    print(f"   (≥ 0; importance-weighted, subtracted from reward)")
     
     print("\nAll solution tests passed!")

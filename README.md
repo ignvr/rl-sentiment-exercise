@@ -2,7 +2,7 @@
 
 RL fine-tuning of Language Models for positive sentiment using GRPO.
 
-This repo was written by Ido Greenberg with advisement by Oran Lang and Gal Chechik for the course [RL-for-Real](https://docs.google.com/document/d/1fmfYp7EH9fqcB7CWWBvrZ40MtCN89Sr_o3o3EG9hWyE/edit?usp=sharing).
+This repo was written by Ido Greenberg with advisement by Oran Lang, Yoad Tewel and Gal Chechik for the course [RL-for-Real](https://docs.google.com/document/d/1fmfYp7EH9fqcB7CWWBvrZ40MtCN89Sr_o3o3EG9hWyE/edit?usp=sharing).
 The course is organized by NVIDIA Research in collaboration with Google Research, Mentee Robotics, Tel-Aviv University, Bar-Ilan University, and the Technion.
 
 ## Overview
@@ -10,8 +10,8 @@ The course is organized by NVIDIA Research in collaboration with Google Research
 In this exercise, you will:
 1. Train GPT-2 to generate positive sentiment text.
 2. Observe reward hacking.
-3. Implement reward shaping functions.
-4. Implement KL divergence regularization.
+3. Implement KL divergence regularization.
+4. Implement reward shaping functions.
 5. Tune the reward, the regularization, and the training configuration to achieve both positive sentiment and sensible responses.
 
 ## Prerequisites
@@ -75,21 +75,23 @@ Do the outputs look like natural language? What might be going wrong?
 
 ### Exercise 1: KL Regularization
 
-In `rewards.py`, implement `kl_penalty_forward()` and `kl_penalty_backward()` to prevent the model from drifting too far from the original GPT-2.
-Compare the forward and backward regularizations, and tune the regularization coefficient to achieve a model with both positive sentiment and sensible writing.
+* In `rewards.py`, implement `kl_penalty_forward()` and `kl_penalty_backward()` to prevent the model from drifting too far from the original GPT-2.
+* Run and compare the forward and backward regularizations.
+* Is the learned highly positive? Does it provide sensible writing? Try to tune the regularization coefficient to achieve a model with both positive sentiment and sensible writing.
 
-Note: for the sake of the exercise, you will implement KL-regularization yourself, instead of using TRL's built-in regularization. You receive pre-computed log probabilities for both the current policy model and reference model. To simplify the code, the log probabilities are re-calculated outside TRL, so that you don't need to modify TRL's interface to access them.
+Note: for the sake of the exercise, you will implement KL-regularization yourself, instead of using TRL's built-in regularization. You receive pre-computed log probabilities for both the current policy model and reference model. To simplify the code, we re-calculate the the log probabilities outside TRL, so that the student can access them without modifying TRL's interface.
 
 ### Exercise 2: Reward Shaping
 
 In `rewards.py`, implement `shaped_reward()` to modify raw sentiment scores.
 
-You may aim for a more realistic and positive model - or for any other goal of your choice!
+You may aim for a more realistic and positive model - or for any other goal of your choice.
 
-Possible ideas:
+Below are a few possible ideas, though we encourage you to come up with your own!
 - **Exponential transformation**: Amplify differences from neutral sentiment
-- **Length penalty**: Penalize short/long responses
+- **Length penalty**: Encourage short/long responses
 - **Repetition penalty**: Detect and penalize "great great great" outputs
+- **Rhyme**: Encourage use of words with the same suffix.
 
 Report the effects on the fine-tuned model.
 

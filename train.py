@@ -603,8 +603,8 @@ def main():
         help="Custom KL regularization type (none, forward, backward)"
     )
     parser.add_argument(
-        "--kl_coef", type=float, default=0.1,
-        help="Coefficient for custom KL regularization (default: 0.1)"
+        "--kl_coef", type=float, default=5.0,
+        help="Coefficient for custom KL regularization (default: 5.0)"
     )
     parser.add_argument(
         "--hackable_reward", action="store_true", default=False,

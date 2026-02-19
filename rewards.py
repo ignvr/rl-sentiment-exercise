@@ -37,28 +37,42 @@ def sentiment_reward(completions: list[str]) -> list[float]:
 
 # =============================================================================
 # KL REGULARIZATION (Exercise 1)
+#
+# CONTEXT: TRL already includes built-in KL regularization (the `beta` parameter),
+# applied per-token during advantage computation. Here you re-implement KL
+# regularization yourself at the token level, to understand how it works.
+#
+# You receive per-token log probabilities as list[list[float]]: one list per
+# completion, with one float per generated token. Your functions should compute
+# per-token KL terms and average them to produce one penalty scalar per completion.
 # =============================================================================
 
 def kl_penalty_forward(
-    log_probs_policy: list[float],
-    log_probs_ref: list[float],
+    log_probs_policy: list[list[float]],
+    log_probs_ref: list[list[float]],
     kl_coef: float = 0.1,
 ) -> list[float]:
     """
     Forward KL regularization penalty.
     
+    Recall: KL(π || π_ref) = E_π[log π - log π_ref].
+    Since the data is already sampled from π, KL estimate is straightforward.
+    Return a positive penalty (≥ 0 when policy diverges from reference).
+    The infrastructure will SUBTRACT this penalty from the reward.
+    
     Args:
-        log_probs_policy: List of avg log probs under current policy (one per completion, averaged over tokens)
-        log_probs_ref: List of avg log probs under reference model (one per completion, averaged over tokens)
-        kl_coef: Coefficient controlling regularization strength
+        log_probs_policy: Per-token log probs under current policy.
+            Shape: list of N completions, each a list of T_i floats.
+        log_probs_ref: Per-token log probs under reference model (same shape).
+        kl_coef: Coefficient controlling regularization strength.
     
     Returns:
-        List of penalty values to ADD to the base reward
+        List of N penalty values (one per completion, ≥ 0).
     
     TODO: Implement this function
     """
     # =========================================================================
-    # YOUR CODE HERE (3-4 lines)
+    # YOUR CODE HERE (~9 lines)
     # =========================================================================
     raise NotImplementedError(
         "Exercise 1a: Implement forward KL penalty"
@@ -69,25 +83,32 @@ def kl_penalty_forward(
 
 
 def kl_penalty_backward(
-    log_probs_policy: list[float],
-    log_probs_ref: list[float],
+    log_probs_policy: list[list[float]],
+    log_probs_ref: list[list[float]],
     kl_coef: float = 0.1,
 ) -> list[float]:
     """
-    Backward KL regularization penalty with stronger penalization of deviations.
+    Backward (reverse) KL regularization penalty.
+    
+    Recall: KL(π_ref || π) = E_π_ref[log(π_ref / π)].
+    Since we sample from π (not π_ref), you need importance sampling to correct
+    the distribution mismatch. Apply the correction per-token and average.
+    Return a positive penalty (≥ 0 in expectation when policy diverges).
+    The infrastructure will SUBTRACT this penalty from the reward.
 
     Args:
-        log_probs_policy: List of avg log probs under current policy (one per completion, averaged over tokens)
-        log_probs_ref: List of avg log probs under reference model (one per completion, averaged over tokens)
-        kl_coef: Coefficient controlling regularization strength
+        log_probs_policy: Per-token log probs under current policy.
+            Shape: list of N completions, each a list of T_i floats.
+        log_probs_ref: Per-token log probs under reference model (same shape).
+        kl_coef: Coefficient controlling regularization strength.
     
     Returns:
-        List of penalty values to ADD to the base reward
+        List of N penalty values (one per completion, ≥ 0 in expectation).
     
     TODO: Implement this function
     """
     # =========================================================================
-    # YOUR CODE HERE (5-6 lines)
+    # YOUR CODE HERE (~13 lines)
     # =========================================================================
     raise NotImplementedError(
         "Exercise 1b: Implement backward KL penalty"
@@ -162,17 +183,18 @@ if __name__ == "__main__":
         print(f"   Not implemented yet")
     
     # Test KL penalties (student implementation)
+    # Values should be ≥ 0 (subtracted from reward by infrastructure)
     print("\n3. KL Penalties (student exercise):")
-    test_lp_policy = [-2.0, -3.0, -1.5]  # Example log probs
-    test_lp_ref = [-2.5, -2.5, -2.5]
+    test_lp_policy = [[-2.0, -3.0, -1.5], [-1.0, -2.0]]  # Per-token log probs
+    test_lp_ref = [[-2.5, -2.5, -2.5], [-1.5, -1.5]]
     try:
         fwd = kl_penalty_forward(test_lp_policy, test_lp_ref, 0.1)
-        print(f"   Forward KL: {fwd}")
+        print(f"   Forward KL: {[f'{p:.4f}' for p in fwd]}  (should be ≥ 0)")
     except NotImplementedError:
         print(f"   Forward KL: Not implemented yet")
     try:
         bwd = kl_penalty_backward(test_lp_policy, test_lp_ref, 0.1)
-        print(f"   Backward KL: {bwd}")
+        print(f"   Backward KL: {[f'{p:.4f}' for p in bwd]}  (should be ≥ 0)")
     except NotImplementedError:
         print(f"   Backward KL: Not implemented yet")
     
