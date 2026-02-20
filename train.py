@@ -18,6 +18,7 @@ Configuration presets are provided for different hardware capabilities.
 """
 
 import argparse
+import math
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -50,11 +51,15 @@ class ValidationCallback(TrainerCallback):
     Generates 1 completion per validation prompt, computes sentiment scores,
     prints first 4 examples and statistics for all 64 prompts.
     
+    Optionally computes reference perplexity (how natural the outputs are
+    according to the original model) to detect reward hacking / degenerate text.
+    
     If wandb is enabled, logs validation metrics and sample completions.
     """
     
     def __init__(self, tokenizer, validation_prompts, eval_steps=10, num_display=4, 
-                 use_wandb=False, temperature=1.0, max_new_tokens=48):
+                 use_wandb=False, temperature=1.0, max_new_tokens=48,
+                 ref_model=None, compute_perplexity=True):
         self.tokenizer = tokenizer
         self.validation_prompts = validation_prompts
         self.eval_steps = eval_steps
@@ -63,6 +68,8 @@ class ValidationCallback(TrainerCallback):
         self.validation_history = []  # Store history for plotting
         self.temperature = temperature
         self.max_new_tokens = max_new_tokens
+        self.ref_model = ref_model
+        self.compute_perplexity = compute_perplexity and (ref_model is not None)
         
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         """Run validation at step 0 before training starts."""
@@ -132,6 +139,32 @@ class ValidationCallback(TrainerCallback):
             "val/positive_ratio": float(np.mean(scores_array > 0.5)),
         }
         
+        # Compute reference perplexity (how natural the text is under original GPT-2)
+        perplexities = None
+        if self.compute_perplexity:
+            from reward_utils import compute_log_probs
+            generated_parts = []
+            for prompt, completion in zip(self.validation_prompts, completions):
+                gen = completion[len(prompt):] if completion.startswith(prompt) else completion
+                generated_parts.append(gen)
+            
+            token_log_probs = compute_log_probs(
+                generated_parts, list(self.validation_prompts),
+                self.ref_model, self.tokenizer,
+            )
+            perplexities = []
+            for lp_tokens in token_log_probs:
+                if len(lp_tokens) > 0:
+                    avg_lp = sum(lp_tokens) / len(lp_tokens)
+                    perplexities.append(math.exp(-avg_lp))
+                else:
+                    perplexities.append(float("nan"))
+            
+            ppl_array = np.array([p for p in perplexities if not math.isnan(p)])
+            if len(ppl_array) > 0:
+                stats["val/perplexity_mean"] = float(np.mean(ppl_array))
+                # stats["val/perplexity_median"] = float(np.median(ppl_array))
+        
         # Store in history
         self.validation_history.append({"step": step, **stats})
         
@@ -150,7 +183,8 @@ class ValidationCallback(TrainerCallback):
             # Extract just the generated part (after prompt)
             generated = completion[len(prompt):] if completion.startswith(prompt) else completion
             
-            print(f"\n[{i+1}] Sentiment: {score:.3f}")
+            ppl_str = f"  Perplexity: {perplexities[i]:.1f}" if perplexities else ""
+            print(f"\n[{i+1}] Sentiment: {score:.3f}{ppl_str}")
             print(f"    Prompt: {prompt}")
             n_chars = 200
             print(f"    Generated:{generated[:n_chars]}{'...' if len(generated) > n_chars else ''}")
@@ -170,6 +204,8 @@ class ValidationCallback(TrainerCallback):
         print(f"  Max:             {stats['val/sentiment_max']:.3f}")
         print(f"  Median:          {stats['val/sentiment_median']:.3f}")
         print(f"  Positive ratio:  {stats['val/positive_ratio']:.1%}")
+        if "val/perplexity_mean" in stats:
+            print(f"  Ref perplexity:  {stats['val/perplexity_mean']:.1f} (mean), {stats['val/perplexity_median']:.1f} (median)")
         print(f"{'='*70}\n")
         
         # Log to wandb if enabled
@@ -237,6 +273,7 @@ def train(
     use_solution: bool = False,
     use_peft: bool = False,
     log_completions: bool = False,
+    compute_perplexity: bool = True,
     seed: int = 42,
     use_wandb: bool = False,
     wandb_project: str = "rl-sentiment",
@@ -261,6 +298,7 @@ def train(
         use_peft: Whether to use LoRA for parameter-efficient training
         log_completions: Whether to log TRL's internal training completions (default: False,
                          we use our own validation callback instead)
+        compute_perplexity: Compute reference perplexity during validation (default: True)
         seed: Random seed for reproducibility
         use_wandb: Whether to log to Weights & Biases
         wandb_project: W&B project name (default: "rl-sentiment")
@@ -370,7 +408,17 @@ def train(
         )
         ref_model = ref_model.to(device)
         ref_model.eval()
-        # Freeze reference model
+        for param in ref_model.parameters():
+            param.requires_grad = False
+        print(f"Reference model loaded (frozen)")
+    elif compute_perplexity:
+        print(f"Loading reference model for perplexity evaluation...")
+        ref_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+        )
+        ref_model = ref_model.to(device)
+        ref_model.eval()
         for param in ref_model.parameters():
             param.requires_grad = False
         print(f"Reference model loaded (frozen)")
@@ -503,6 +551,8 @@ def train(
         use_wandb=use_wandb,
         temperature=config_preset.temperature,
         max_new_tokens=config_preset.max_completion_length,
+        ref_model=ref_model,
+        compute_perplexity=compute_perplexity,
     )
     
     # Use policy_model if loaded (for custom KL), otherwise let TRL load from model_name
@@ -633,14 +683,18 @@ def main():
         help="Enable TRL's internal completion logging (shows GRPO group generations)"
     )
     parser.add_argument(
+        "--no_perplexity", action="store_true",
+        help="Disable reference perplexity computation during validation"
+    )
+    parser.add_argument(
         "--seed", type=int, default=42,
         help="Random seed for reproducibility"
     )
     
     # Wandb arguments
     parser.add_argument(
-        "--wandb", action="store_true", default=True,
-        help="Enable logging to Weights & Biases"
+        "--no_wandb", action="store_true",
+        help="Disable logging to Weights & Biases"
     )
     parser.add_argument(
         "--wandb_project", type=str, default="rl-sentiment",
@@ -669,8 +723,9 @@ def main():
         use_solution=args.use_solution,
         use_peft=args.use_peft,
         log_completions=args.log_trl_completions,
+        compute_perplexity=not args.no_perplexity,
         seed=args.seed,
-        use_wandb=args.wandb,
+        use_wandb=not args.no_wandb,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
     )

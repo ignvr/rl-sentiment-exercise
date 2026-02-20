@@ -102,7 +102,7 @@ def kl_penalty_backward(
         token_kl = []
         for lp_p, lp_r in zip(lp_policy, lp_ref):
             diff = lp_r - lp_p
-            weight = min(math.exp(diff), 100.0)
+            weight = min(math.exp(diff), 100.0)  # importance-sampling weight P(π_ref) / P(π), clipped for stability
             token_kl.append(weight * diff)
         penalties.append(kl_coef * sum(token_kl) / n)
     return penalties
