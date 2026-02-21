@@ -40,12 +40,15 @@ def _strip_prefix(prefix, completion):
     return completion
 
 
-def _load_scorer(use_shaped_reward):
+def _load_scorer(use_shaped_reward, use_solution=False):
     """Return a scoring function: shaped_reward if requested, else raw sentiment."""
     if not use_shaped_reward:
         return get_sentiment_scores, "sentiment"
 
-    from rewards import shaped_reward
+    if use_solution:
+        from rewards_solution import shaped_reward
+    else:
+        from rewards import shaped_reward
 
     def scorer(completions):
         raw_scores = get_sentiment_scores(completions)
@@ -96,6 +99,10 @@ def main():
         "--use_shaped_reward", action="store_true",
         help="Score with your shaped_reward() from rewards.py instead of raw sentiment",
     )
+    parser.add_argument(
+        "--use_solution", action="store_true",
+        help="Use rewards_solution.py instead of rewards.py (for testing/development)",
+    )
     parser.add_argument("--num_prompts", type=int, default=32)
     parser.add_argument("--max_new_tokens", type=int, default=50)
     args = parser.parse_args()
@@ -113,7 +120,7 @@ def main():
     else:
         strategies = dict(PROMPT_STRATEGIES)
 
-    scorer, scorer_name = _load_scorer(args.use_shaped_reward)
+    scorer, scorer_name = _load_scorer(args.use_shaped_reward, args.use_solution)
     print(f"Scoring metric: {scorer_name}")
 
     print("Loading base GPT-2...")
