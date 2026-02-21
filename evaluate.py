@@ -153,6 +153,14 @@ def evaluate_model(
     print("Computing sentiment scores...")
     scores = get_sentiment_scores(completions)
     
+    # Compute completion lengths (words)
+    gen_parts = []
+    for prompt, completion in zip(prompts, completions):
+        gen = completion[len(prompt):] if completion.startswith(prompt) else completion
+        gen_parts.append(gen)
+    lengths = [len(g.split()) for g in gen_parts]
+    lengths_array = np.array(lengths)
+    
     # Compute statistics
     scores_array = np.array(scores)
     stats = {
@@ -162,6 +170,7 @@ def evaluate_model(
         "min": float(np.min(scores_array)),
         "max": float(np.max(scores_array)),
         "positive_ratio": float(np.mean(scores_array > 0.5)),
+        "length_mean": float(np.mean(lengths_array)),
     }
     
     return {
@@ -169,6 +178,7 @@ def evaluate_model(
         "prompts": prompts,
         "completions": completions,
         "scores": scores,
+        "lengths": lengths,
         "stats": stats,
     }
 
@@ -239,10 +249,12 @@ def plot_sentiment_distribution(
     plt.grid(True, alpha=0.3)
     
     # Add stats text box
+    length_line = f"\nMean length: {stats['length_mean']:.1f} words" if "length_mean" in stats else ""
     stats_text = (
         f"Mean: {stats['mean']:.3f}\n"
         f"Std: {stats['std']:.3f}\n"
         f"Positive ratio: {stats['positive_ratio']:.1%}"
+        f"{length_line}"
     )
     plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes,
              verticalalignment='top', fontfamily='monospace',
@@ -330,15 +342,16 @@ def print_samples(results: dict, num_samples: int = 5):
     print("SAMPLE COMPLETIONS")
     print("="*60)
     
+    lengths = results.get("lengths", [None] * len(results["completions"]))
     for i in range(min(num_samples, len(results["completions"]))):
         prompt = results["prompts"][i]
         completion = results["completions"][i]
         score = results["scores"][i]
         
-        # Color code based on sentiment
         sentiment = "POSITIVE" if score > 0.5 else "NEGATIVE"
+        length_str = f"  Words: {lengths[i]}" if lengths[i] is not None else ""
         
-        print(f"\n[{i+1}] Score: {score:.3f} ({sentiment})")
+        print(f"\n[{i+1}] Score: {score:.3f} ({sentiment}){length_str}")
         print(f"    Prompt: {prompt}")
         print(f"    Output: {completion}")
 

@@ -117,14 +117,14 @@ def shaped_reward(scores: list[float], completions: list[str], prompts: list[str
     Apply custom reward shaping to transform raw sentiment scores.
     
     SOLUTION: Target-length reward. Rewards positive sentiment but scales it
-    by how close the completion is to a target of 10 words per completion.
+    by how close the completion is to a target of 55 characters per completion.
     The length factor is 1/(1 + deviation/target).
     """
-    target_len = 10
+    target_len = 55
     shaped = []
     for score, completion in zip(scores, completions):
-        n_words = len(completion.split())
-        length_factor = 1 / (1 + abs(n_words/target_len - 1))
+        n_chars = len(completion)
+        length_factor = 1 / (1 + abs(n_chars / target_len - 1))
         shaped.append(score * length_factor)
     return shaped
 
