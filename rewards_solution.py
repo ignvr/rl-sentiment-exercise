@@ -112,28 +112,20 @@ def kl_penalty_backward(
 # REWARD SHAPING - SOLUTION
 # =============================================================================
 
-def shaped_reward(scores: list[float], completions: list[str]) -> list[float]:
+def shaped_reward(scores: list[float], completions: list[str], prompts: list[str] = None) -> list[float]:
     """
     Apply custom reward shaping to transform raw sentiment scores.
     
-    SOLUTION: Exponential shaping that amplifies deviation from neutral.
-    
-    Formula: exp((score - 0.5) / temperature) - 1
-    - score=0.5 -> 0 (neutral stays neutral)
-    - score=0.9 -> ~0.49 (high becomes more positive)
-    - score=0.1 -> ~-0.33 (low becomes more negative)
-    
-    Alternative solutions students might implement:
-    - Length penalty: reward -= 0.01 * abs(len(completion) - target_len)
-    - Repetition penalty: count unique words / total words
-    - Threshold: 1.0 if score > 0.7 else -1.0
+    SOLUTION: Target-length reward. Rewards positive sentiment but scales it
+    by how close the completion is to a target of 10 words per completion.
+    The length factor is 1/(1 + deviation/target).
     """
-    temperature = 1.0
+    target_len = 10
     shaped = []
-    for score in scores:
-        # Exponential shaping
-        shifted = score - 0.5
-        shaped.append(math.exp(shifted / temperature) - 1.0)
+    for score, completion in zip(scores, completions):
+        n_words = len(completion.split())
+        length_factor = 1 / (1 + abs(n_words/target_len - 1))
+        shaped.append(score * length_factor)
     return shaped
 
 

@@ -137,7 +137,6 @@ class ValidationCallback(transformers.TrainerCallback):
             "val/sentiment_std": float(np.std(scores_array)),
             "val/sentiment_min": float(np.min(scores_array)),
             "val/sentiment_max": float(np.max(scores_array)),
-            "val/sentiment_median": float(np.median(scores_array)),
             "val/positive_ratio": float(np.mean(scores_array > 0.5)),
         }
         
@@ -209,10 +208,9 @@ class ValidationCallback(transformers.TrainerCallback):
         print(f"  Std:             {stats['val/sentiment_std']:.3f}")
         print(f"  Min:             {stats['val/sentiment_min']:.3f}")
         print(f"  Max:             {stats['val/sentiment_max']:.3f}")
-        print(f"  Median:          {stats['val/sentiment_median']:.3f}")
         print(f"  Positive ratio:  {stats['val/positive_ratio']:.1%}")
         if "val/perplexity_mean" in stats:
-            print(f"  Ref perplexity:  {stats['val/perplexity_mean']:.1f} (mean), {stats['val/perplexity_median']:.1f} (median)")
+            print(f"  Ref perplexity:  {stats['val/perplexity_mean']:.1f} (mean)")
         print(f"{'='*70}\n")
         
         # Log to wandb if enabled

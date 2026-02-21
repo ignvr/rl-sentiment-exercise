@@ -138,7 +138,7 @@ def make_reward_function(
         if shaping == "linear":
             base_rewards = list(raw_scores)
         elif shaping == "shaped":
-            base_rewards = reward_module.shaped_reward(raw_scores, completions)
+            base_rewards = reward_module.shaped_reward(raw_scores, completions, prompts)
         else:
             raise ValueError(f"Unknown shaping: {shaping}")
         

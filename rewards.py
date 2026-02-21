@@ -122,7 +122,7 @@ def kl_penalty_backward(
 # REWARD SHAPING (Exercise 4)
 # =============================================================================
 
-def shaped_reward(scores: list[float], completions: list[str]) -> list[float]:
+def shaped_reward(scores: list[float], completions: list[str], prompts: list[str] = None) -> list[float]:
     """
     Apply custom reward shaping to transform raw sentiment scores.
     
@@ -131,7 +131,8 @@ def shaped_reward(scores: list[float], completions: list[str]) -> list[float]:
     
     Args:
         scores: Raw sentiment scores in [0, 1] from the sentiment model
-        completions: The generated text completions (useful for extracting length, word repetition, etc.)
+        completions: The generated text completions (just the generated part, without the prompt)
+        prompts: The original prompts (if you need the full sentence: prompt + completion)
     
     Returns:
         List of shaped reward values
