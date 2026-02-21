@@ -28,6 +28,8 @@ import numpy as np
 import transformers
 import trl
 
+transformers.logging.set_verbosity_error()
+
 # Optional wandb import
 try:
     import wandb

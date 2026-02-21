@@ -5,9 +5,9 @@ This module contains reward function implementations for the RL exercise.
 Students should implement the functions marked with TODO.
 
 Functions to implement:
-1. shaped_reward() - Apply reward shaping to rewards
-2. kl_penalty_forward() - Forward KL divergence penalty
-3. kl_penalty_backward() - Backward KL divergence penalty
+1. kl_penalty_forward() - Forward KL divergence penalty
+2. kl_penalty_backward() - Backward KL divergence penalty
+3. shaped_reward() - Apply reward shaping to rewards
 
 The base sentiment_reward() is provided as a working example.
 """
@@ -36,7 +36,7 @@ def sentiment_reward(completions: list[str]) -> list[float]:
 
 
 # =============================================================================
-# KL REGULARIZATION (Exercise 1)
+# KL REGULARIZATION (Exercise 2)
 #
 # CONTEXT: TRL already includes built-in KL regularization (the `beta` parameter),
 # applied per-token during advantage computation. Here you re-implement KL
@@ -75,7 +75,7 @@ def kl_penalty_forward(
     # YOUR CODE HERE (~9 lines)
     # =========================================================================
     raise NotImplementedError(
-        "Exercise 1a: Implement forward KL penalty"
+        "Exercise: Implement forward KL penalty"
     )
     # =========================================================================
     # END YOUR CODE
@@ -92,7 +92,7 @@ def kl_penalty_backward(
     
     Recall: KL(π_ref || π) = E_π_ref[log(π_ref / π)].
     Since we sample from π (not π_ref), you need importance sampling to correct
-    the distribution mismatch. Apply the correction per-token and average.
+    the distribution mismatch.
     Return a positive penalty (≥ 0 in expectation when policy diverges).
     The infrastructure will SUBTRACT this penalty from the reward.
 
@@ -111,7 +111,7 @@ def kl_penalty_backward(
     # YOUR CODE HERE (~13 lines)
     # =========================================================================
     raise NotImplementedError(
-        "Exercise 1b: Implement backward KL penalty"
+        "Exercise: Implement backward KL penalty"
     )
     # =========================================================================
     # END YOUR CODE
@@ -119,7 +119,7 @@ def kl_penalty_backward(
 
 
 # =============================================================================
-# REWARD SHAPING (Exercise 2)
+# REWARD SHAPING (Exercise 3)
 # =============================================================================
 
 def shaped_reward(scores: list[float], completions: list[str]) -> list[float]:
@@ -145,7 +145,7 @@ def shaped_reward(scores: list[float], completions: list[str]) -> list[float]:
     # YOUR CODE HERE
     # =========================================================================
     raise NotImplementedError(
-        "Exercise 2: Implement reward shaping"
+        "Exercise: Implement reward shaping"
     )
     # =========================================================================
     # END YOUR CODE

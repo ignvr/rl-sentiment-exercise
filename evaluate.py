@@ -23,7 +23,10 @@ from typing import Optional
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+transformers.logging.set_verbosity_error()
 
 from data import get_validation_dataset, VALIDATION_PROMPTS
 from sentiment import get_sentiment_scores

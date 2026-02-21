@@ -73,27 +73,74 @@ Observe the results.
 Refer to both the numeric validation scores, and the model output examples.
 Do the outputs look like natural language? What might be going wrong?
 
-### Exercise 1: KL Regularization
+### Exercise 1: Review the Pipeline
+
+Read through the codebase to understand the full RL fine-tuning pipeline. There are **10 comprehension questions** (Q1–Q10) embedded as comments throughout the code. Search for `QUESTION Q` across these files:
+
+- `data.py` — Q1, Q2 (data and environment)
+- `sentiment.py` — Q3, Q4 (reward models)
+- `reward_utils.py` — Q5 (reward function wiring)
+- `train.py` — Q6–Q10 (training configuration and loop)
+
+Read each question in context, and make sure you can answer it before moving on.
+
+### Exercise 2: KL Regularization
 
 * In `rewards.py`, implement `kl_penalty_forward()` and `kl_penalty_backward()` to prevent the model from drifting too far from the original GPT-2.
 * Run and compare the forward and backward regularizations.
 * Is the learned highly positive? Does it provide sensible writing? Try to tune the regularization coefficient to achieve a model with both positive sentiment and sensible writing.
 
+```
 Note: for the sake of the exercise, you will implement KL-regularization yourself, instead of using TRL's built-in regularization. You receive pre-computed log probabilities for both the current policy model and reference model. To simplify the code, we re-calculate the the log probabilities outside TRL, so that the student can access them without modifying TRL's interface.
+```
 
-### Exercise 2: Reward Shaping
+### Exercise 3: Reward Shaping
 
 In `rewards.py`, implement `shaped_reward()` to modify raw sentiment scores.
 
-You may aim for a more realistic and positive model - or for any other goal of your choice.
+Now that KL regularization keeps the model grounded, this is your chance to get creative.
+Shape the reward however you like — force your will on the language model
+and watch how different incentives translate within minutes into entirely different outputs.
 
-Below are a few possible ideas, though we encourage you to come up with your own!
+Below are a few ideas, but we encourage you to come up with your own:
 - **Exponential transformation**: Amplify differences from neutral sentiment
-- **Length penalty**: Encourage short/long responses
+- **Length penalty**: Encourage short or long responses
 - **Repetition penalty**: Detect and penalize "great great great" outputs
-- **Rhyme**: Encourage use of words with the same suffix.
+- **Rhyme bonus**: Reward words that share the same suffix
+- **Mood whiplash**: Start negative, end positive (or vice versa)
+- **Vocabulary spice**: Reward uncommon words or penalize boring ones
 
-Report the effects on the fine-tuned model.
+Among the reward metrics you tried, which ones learned well and which ones were harder to optimize?
+Try to explain why.
+
+### Exercise 4: RL vs. prompt engineering
+
+Can you get base GPT-2 to match your RL-trained model just by changing the prompt (i.e., concatenate a prefix before the prompt)?
+
+`prompt_engineering.py` lets you test this. By default, it uses built-in sentiment prefixes:
+
+```bash
+# Default: built-in prompt strategies, sentiment scoring
+python prompt_engineering.py
+
+# Compare against your RL-trained model
+python prompt_engineering.py --trained_model ./outputs/final
+```
+
+However, you can supply your own prefixes and your own score metric using your custom reward function from Exercise 3.
+
+#### Your task
+
+* Choose one of the metrics you optimized in Exercise 3. Make sure your chosen metric is the one currently implemented in `shaped_reward()`.
+* Suggest a few prompts that may improve this metric, and add them via `PROMPT_STRATEGIES` in `prompt_engineering.py`. Also keep the `no prefix` as a baseline.
+* Compare the RL agent vs. the prompt-enhanced GPT-2, with your shaped reward as a score metric:
+```bash
+# Use your shaped_reward() as the scoring metric
+python prompt_engineering.py --use_shaped_reward --trained_model ./outputs/final
+```
+
+Summarize your findings.
+Where does prompt engineering fall short? Why is this especially hard with a base (non-instruction-tuned) model like GPT-2?
 
 ---
 
