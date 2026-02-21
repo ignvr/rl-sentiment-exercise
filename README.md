@@ -111,16 +111,16 @@ Implement `shaped_reward()` in `rewards.py`  to modify the raw sentiment scores,
 python train.py --reward_shaping shaped
 ```
 
-We encourage you to come up with your own reward function. Below are a few ideas just to get you in the mood:
-- Exponential transformation: Amplify differences from neutral sentiment
-- Length penalty: Encourage short or long responses
-- Repetition penalty: Detect and penalize "great great great" outputs
+Among the reward metrics you tried, which ones learned well and which ones were harder to optimize?
+Try to explain why.
+
+We encourage you to come up with your own reward function. Below are a few ideas just to get you in the mood (see `shaped_reward()` in `rewards_solution.py` for a concrete example):
+- Numerical transformation: Exponent, negation, etc.
+- Length penalty: Encourage responses of certain lengths
+- Repetition penalty: Penalize repetitive outputs
 - Rhyme bonus: Reward words that share the same suffix
 - Mood whiplash: Start negative, end positive (or vice versa)
 - Vocabulary spice: Reward uncommon words or penalize boring ones
-
-Among the reward metrics you tried, which ones learned well and which ones were harder to optimize?
-Try to explain why.
 
 ### Exercise 5: RL vs. Prompt Engineering
 
