@@ -145,7 +145,7 @@ VALIDATION_PROMPTS = [
 ]
 
 # QUESTION Q2: How do the prompts differ from typical modern LLM prompts?
-# How is this related to the choice to work with GPT-2?
+# Hint: notice that the exercise relies on GPT-2, which was not tuned specifically for questions or instructions.
 
 def get_train_dataset() -> Dataset:
     """
