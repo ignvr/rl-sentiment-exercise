@@ -70,6 +70,8 @@ Read through the codebase to understand the full RL fine-tuning pipeline. There 
 
 Read each question in context, and make sure you can answer it before moving on.
 
+> You may want to disable autocomplete agents like Cursor, which may accidently answer for you :)
+
 ### Exercise 2: Train for Positive Sentiment
 
 Run the vanilla GRPO fine-tuning using:
@@ -121,9 +123,17 @@ We encourage you to come up with your own reward function. Below are a few ideas
 
 ### Exercise 5: RL vs. Prompt Engineering
 
-Can you get base GPT-2 to match your RL-trained model just by changing the prompt (i.e., concatenate a prefix before the prompt)?
+So far, you demonstrated that properly-used RL is a powerful tool for tuning an LLM to your needs.
+But could one obtain a similar effect using *Prompt Engineering*, to guide the LLM toward the desired behavior?
 
-`prompt_engineering.py` lets you test this. By default, it uses built-in sentiment prefixes:
+In this exercise, you will (a) compare RL vs. Prompt Engineering, (b) demonstrate that they can also work together.
+
+#### Code
+
+`prompt_engineering.py` lets you test the Base GPT-2 against your RL-trained model, with various modified prompts.
+The code allows you to try different prompt-prefixes, which are just strings that are concatenated before the beginning of every test prompt.
+
+By default, `prompt_engineering.py` uses built-in sentiment prefixes:
 
 ```bash
 # Default: built-in prompt strategies, sentiment scoring
@@ -133,7 +143,7 @@ python prompt_engineering.py
 python prompt_engineering.py --trained_model ./outputs/final
 ```
 
-However, you can supply your own prefixes and your own score metric using your custom reward function from Exercise 3.
+However, in the exercise you will supply your own prefixes and your own score metric, using your custom reward function from Exercise 3.
 
 #### Your task
 
@@ -146,7 +156,7 @@ python prompt_engineering.py --use_shaped_reward --trained_model ./outputs/final
 ```
 
 Summarize your findings.
-Where does prompt engineering fall short? Why is this especially hard with a base (non-instruction-tuned) model like GPT-2?
+Where does prompt engineering fall short? Why is this especially hard with a base (non-instruction-tuned) model like GPT-2? Did prompting and RL together do better than each of the two on their own?
 
 ---
 
