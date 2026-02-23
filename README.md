@@ -80,15 +80,16 @@ Run the vanilla GRPO fine-tuning using:
 python train.py
 ```
 
-Observe the results.
-Refer to both the numeric validation scores, and the model output examples.
-Do the outputs look like natural language? What might be going wrong?
+Observe the results - both the numeric validation scores and model output examples.
+* Do the outputs look like natural language? What might be going wrong?
+* Given the model output examples, would you expect the perplexity score to be high or low? Does the actual peplexity metric match your expectation? How can you explain this?
 
 ### Exercise 3: KL Regularization
 
 * In `rewards.py`, implement `kl_penalty_forward()` and `kl_penalty_backward()` to prevent the model from drifting too far from the original GPT-2.
 * Run and compare the forward and backward regularizations.
-* Is the learned model highly positive? Does it provide sensible writing? Tune the regularization coefficient to achieve a model with both sensible writing and positive sentiment (try to keep the mean sentiment score above 0.9).
+* Is the learned model highly positive? Does it provide sensible writing?
+* Tune the regularization coefficient to achieve a model that is both sensible and positive. Try to keep the mean sentiment score above 0.9.
 
 To train with your KL regularization, use `kl_type` and `kl_coef`. For example:
 
